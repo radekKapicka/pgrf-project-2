@@ -17,9 +17,6 @@ public class GridFactory {
             for (int i = 0; i < a; i++) {
                 vb[index++] = i / (float) (a - 1);
                 vb[index++] = j / (float) (b - 1);
-//                System.out.println(i / (float) (a - 1));
-//                System.out.println(j / (float) (b - 1));
-//                System.out.println("---");
             }
         }
 
@@ -34,13 +31,6 @@ public class GridFactory {
                 ib[index2++] = offset + i + a;
                 ib[index2++] = offset + i + 1;
                 ib[index2++] = offset + i + a + 1;
-//                System.out.println(offset + i);
-//                System.out.println(offset + i + 1);
-//                System.out.println(offset + i + a);
-//                System.out.println(offset + i + a);
-//                System.out.println(offset + i + 1);
-//                System.out.println(offset + i + a + 1);
-//                System.out.println("---");
             }
         }
 

@@ -42,6 +42,9 @@ public class Renderer extends AbstractRenderer {
 	private int locVisMode;
 	private int visMode = 0;
 
+	private int locLightFragment;
+	private int lightFragment = 0;
+
 	private OGLTexture2D mosaictexture;
 	private OGLTexture.Viewer viewer;
 
@@ -66,6 +69,7 @@ public class Renderer extends AbstractRenderer {
 		locLightVP = glGetUniformLocation(shaderProgramViewer,"lightVP");
 		locTime = glGetUniformLocation(shaderProgramViewer, "time");
 		locVisMode = glGetUniformLocation(shaderProgramViewer, "visMode");
+		locLightFragment= glGetUniformLocation(shaderProgramViewer, "lightFragment");
 
 		locViewLight = glGetUniformLocation(shaderProgramLight, "view");
 		locProjectionLight = glGetUniformLocation(shaderProgramLight,"projection");
@@ -111,7 +115,6 @@ public class Renderer extends AbstractRenderer {
 
 		viewer.view(renderTarget.getDepthTexture(), -1, -1, 0.7);
 		viewer.view(renderTarget.getColorTexture(), -1, -0.3, 0.7);
-
 
 		textRenderer.addStr2D(width-90, height - 5, "test");
 	}
@@ -165,6 +168,7 @@ public class Renderer extends AbstractRenderer {
 		glUniform3fv(locEyePosition, ToFloatArray.convert(camera.getEye()));
 		glUniform1f(locTime, time);
 		glUniform1i(locVisMode, visMode);
+		glUniform1i(locLightFragment, lightFragment);
 
 
 		glUniformMatrix4fv(locView, false, camera.getViewMatrix().floatArray());
@@ -187,6 +191,9 @@ public class Renderer extends AbstractRenderer {
 		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
 
 		glUniform1i(locSolid,6);
+		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
+
+		glUniform1i(locSolid,7);
 		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
 	}
 
@@ -273,7 +280,13 @@ public class Renderer extends AbstractRenderer {
 					case GLFW_KEY_3 -> visMode = 2;
 					case GLFW_KEY_4 -> visMode = 3;
 					case GLFW_KEY_5 -> visMode = 4;
-
+					case GLFW_KEY_6 -> visMode = 5;
+					case GLFW_KEY_H -> lightFragment= 1;
+					case GLFW_KEY_J -> lightFragment= 2;
+					case GLFW_KEY_K -> lightFragment= 3;
+					case GLFW_KEY_G -> lightFragment= 4;
+					case GLFW_KEY_UP -> cameraLight = cameraLight.left(0.1);
+					case GLFW_KEY_DOWN -> cameraLight = cameraLight.right(0.1);
 				}
 			}
 		}

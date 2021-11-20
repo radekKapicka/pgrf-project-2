@@ -18,6 +18,18 @@ out vec4 depthTextureCoord;
 
 const float PI = 3.14159;
 
+vec3 getLightSource(vec2 pos){
+	float az = pos.x * PI;
+	float ze = pos.y * PI / 2;
+	float r = 1;
+
+	float x = r * cos(az) * cos(ze);
+	float y = r * sin(az) * cos(ze);
+	float z = r * sin(ze);
+
+	return vec3((x/4)+7.5,(y/4)+7.5,(z/4)+7.5);
+}
+
 //sfericke teleso 1
 vec3 getSphere(vec2 pos){
 	float az = pos.x * PI;
@@ -113,6 +125,12 @@ vec3 getCylinderNormal(vec2 pos){
 
 	return cross(u,v);
 }
+vec3 getLightSourceNormal(vec2 pos){
+	vec3 u = getLightSource(pos + vec2(0.001,0)) - getLightSource(pos - vec2(0.001,0));
+	vec3 v = getLightSource(pos + vec2(0,0.001)) - getLightSource(pos - vec2(0,0.001));
+
+	return cross(u,v);
+}
 
 vec3 getSphereNormalByDerivate(vec2 pos){
 	float az = pos.x * PI;
@@ -159,6 +177,9 @@ void main() {
 	}else if(solid == 6){
 		pos3 = getCylinder(position);
 		normal = getCylinderNormal(position);
+	}else if(solid == 7){
+		pos3 = getLightSource(position);
+		normal = getLightSourceNormal(position);
 	}
 
 	gl_Position = projection * view * vec4(pos3, 1.0);

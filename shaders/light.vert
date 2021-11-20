@@ -21,6 +21,7 @@ vec3 getSphere(vec2 pos){
     return vec3(x-1,y-1,z);
 }
 
+
 vec3 getElephant(vec2 pos){
     float az = ((pos.x + 1)/2) * PI;
     float ze = ((pos.y + 1)/2) * (2 * PI);

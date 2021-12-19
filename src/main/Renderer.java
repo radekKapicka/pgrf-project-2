@@ -1,19 +1,30 @@
 package main;
 
 import lwjglutils.*;
-import org.lwjgl.glfw.GLFWCursorPosCallback;
-import org.lwjgl.glfw.GLFWKeyCallback;
-import org.lwjgl.glfw.GLFWMouseButtonCallback;
-import org.lwjgl.glfw.GLFWWindowSizeCallback;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.glfw.*;
 import transforms.*;
 
-import java.io.IOException;
+import java.nio.DoubleBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
+import static lwjglutils.ShaderUtils.TESSELATION_SUPPORT_VERSION;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
+import static org.lwjgl.opengl.GL40.*;
+import static org.lwjgl.opengl.GL40.GL_PATCHES;
+import static org.lwjgl.opengl.GL20.glDeleteProgram;
+import static org.lwjgl.opengl.GL20.glGetUniformLocation;
+import static org.lwjgl.opengl.GL20.glUniform1f;
+import static org.lwjgl.opengl.GL20.glUseProgram;
+import static org.lwjgl.opengl.GL40.GL_MAX_PATCH_VERTICES;
+import static org.lwjgl.opengl.GL40.GL_PATCH_VERTICES;
+import static org.lwjgl.opengl.GL40.glPatchParameteri;
 
 
 /**
@@ -24,29 +35,135 @@ import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 public class Renderer extends AbstractRenderer {
 
 	private double oldMx, oldMy;
-	private boolean mousePressed,animation;
-	private int myPolygonMode = GL_FILL;
+	private boolean mousePressed;
+	private int myPolygonMode = GL_LINE;
 
-	private int shaderProgramViewer, shaderProgramLight;
-	private OGLBuffers buffers;
+	private int shaderProgramViewer;
+	private OGLBuffers buffers, buffersLine;
 	private OGLRenderTarget renderTarget;
 
-	private Camera camera, cameraLight;
+	private Camera camera;
 	private Mat4 projection;
-	private int locView, locProjection, locSolid, locLightPosition, locEyePosition, locLightVP;
-	private int  locViewLight, locProjectionLight, locSolidLight;
 
-	private int locTime, locTimeLight;
-	private float time = 0;
+	private int locView, locProjection, locEyePosition, locDemoType;
 
-	private int locVisMode;
-	private int visMode = 0;
+	private int locIter;
+	private int iter = 1;
 
-	private int locLightFragment;
-	private int lightFragment = 0;
+	int demoType = 0;
+	boolean demoTypeChanged = true;
 
-	private OGLTexture2D mosaictexture;
-	private OGLTexture.Viewer viewer;
+	List<Integer> indexBufferDataLine;
+	List<Vec2D> vertexBufferDataPosLine;
+	List<Vec3D> vertexBufferDataColLine;
+	boolean update = true, mode = false;
+
+	//zde vytvarim a plnim buffery pro grid, ten je z pocatku definovan ctyrmi body a tvori ho 2 trojuhelniky
+	void createBuffers() {
+		int[] indexBufferData = { 0,1,2,0,3,2};
+
+		float[] vertexBufferDataPos = {
+				-0.8f, -0.6f,
+				-0.8f, 0.6F,
+				0.8f, 0.6f,
+				0.8f, -0.6F,
+		};
+
+		float[] vertexBufferDataCol = {
+				1, 0, 1,
+				0, 1, 1,
+				1, 0, 0,
+				1,1,0
+		};
+
+		OGLBuffers.Attrib[] attributesPos = {
+				new OGLBuffers.Attrib("inPosition", 2),
+		};
+		OGLBuffers.Attrib[] attributesCol = {
+				new OGLBuffers.Attrib("inColor", 3)
+		};
+		buffers = new OGLBuffers(vertexBufferDataPos, attributesPos,
+				indexBufferData);
+		buffers.addVertexBuffer(vertexBufferDataCol, attributesCol);
+	}
+
+	//zde tvorim buffery pro linku
+	void initBuffers() {
+		indexBufferDataLine = new ArrayList<>();
+		vertexBufferDataPosLine = new ArrayList<>();
+		vertexBufferDataColLine = new ArrayList<>();
+
+		vertexBufferDataPosLine.add(new Vec2D(-0.5f, 0.0f));
+		vertexBufferDataPosLine.add(new Vec2D(0.0f, 0.5));
+		vertexBufferDataPosLine.add(new Vec2D(0.0f, -0.5f));
+		vertexBufferDataPosLine.add(new Vec2D(0.5f, 0.0f));
+		vertexBufferDataPosLine.add(new Vec2D(0.7f, 0.5f));
+		vertexBufferDataPosLine.add(new Vec2D(0.9f, -0.7f));
+
+		Random r = new Random();
+		for(int i = 0; i < vertexBufferDataPosLine.size(); i++){
+			indexBufferDataLine.add(i);
+			vertexBufferDataColLine.add(new Vec3D(r.nextDouble(),r.nextDouble(),r.nextDouble()));
+		}
+	}
+
+	//zde probíhá update bufferů linky v pripade, ze generuji dalsi vrcholy
+	void updateBuffers() {
+		OGLBuffers.Attrib[] attributesPos = {
+				new OGLBuffers.Attrib("inPosition", 2), };
+		OGLBuffers.Attrib[] attributesCol = {
+				new OGLBuffers.Attrib("inColor", 3)
+		};
+
+		buffersLine = new OGLBuffers(ToFloatArray.convert(vertexBufferDataPosLine), attributesPos,
+				ToIntArray.convert(indexBufferDataLine));
+		buffersLine.addVertexBuffer(ToFloatArray.convert(vertexBufferDataColLine), attributesCol);
+	}
+
+	private int init(int demoType){
+		int newShaderProgram = 0;
+		switch (demoType){
+			case 0: //v tomto modu se zobrazuje grid pomoci VS, FS a tess
+				if (OGLUtils.getVersionGLSL() >= TESSELATION_SUPPORT_VERSION) {
+					newShaderProgram = ShaderUtils.loadProgram(
+							"/start",
+							"/start",
+							null,
+							"/start",
+							"/start",
+							null);
+				}
+				else
+					System.out.println("Tesselation is not supported");
+				break;
+			case 1: //v tomto modu se zobrazuji body gridu, ktere maji posunute hranice,aby byly lepe videt (tvori je 2 trpjuhelniky), pomoci VS, FS a GS
+				if (OGLUtils.getVersionGLSL() >= TESSELATION_SUPPORT_VERSION) {
+					newShaderProgram = ShaderUtils.loadProgram(
+							"/start");
+				}
+				else
+					System.out.println("Tesselation is not supported");
+				break;
+			case 2: //v tomto modu se zobrazuje krivka pomoci VS, FS, a GS pro krivku
+				if (OGLUtils.getVersionGLSL() >= TESSELATION_SUPPORT_VERSION) {
+					newShaderProgram = ShaderUtils.loadProgram(
+							"/start","/start","/startLine",null,null,null);
+				}
+				else
+					System.out.println("Tesselation is not supported");
+				break;
+			default: //defaultne se zobrazuji vsechny shadery krome startLine.geom
+				if (OGLUtils.getVersionGLSL() >= TESSELATION_SUPPORT_VERSION) {
+					newShaderProgram = ShaderUtils.loadProgram(
+							"/start");
+				}
+				else
+					System.out.println("Tesselation is not supported");
+		}
+
+		return newShaderProgram;
+
+	}
 
 
 	@Override
@@ -58,96 +175,62 @@ public class Renderer extends AbstractRenderer {
 		OGLUtils.shaderCheck();
 
 		glClearColor(0.1f , 0.1f, 0.1f, 1.0f);
+
 		shaderProgramViewer = ShaderUtils.loadProgram("/start");
-		shaderProgramLight = ShaderUtils.loadProgram("/light");
 
 		locView = glGetUniformLocation(shaderProgramViewer,"view");
 		locProjection = glGetUniformLocation(shaderProgramViewer, "projection");
-		locSolid = glGetUniformLocation(shaderProgramViewer,"solid");
-		locLightPosition = glGetUniformLocation(shaderProgramViewer,"lightPosition");
 		locEyePosition = glGetUniformLocation(shaderProgramViewer,"eyePosition");
-		locLightVP = glGetUniformLocation(shaderProgramViewer,"lightVP");
-		locTime = glGetUniformLocation(shaderProgramViewer, "time");
-		locVisMode = glGetUniformLocation(shaderProgramViewer, "visMode");
-		locLightFragment= glGetUniformLocation(shaderProgramViewer, "lightFragment");
 
-		locViewLight = glGetUniformLocation(shaderProgramLight, "view");
-		locProjectionLight = glGetUniformLocation(shaderProgramLight,"projection");
-		locSolidLight = glGetUniformLocation(shaderProgramLight,"solid");
-		locTimeLight = glGetUniformLocation(shaderProgramLight, "time");
+		if (OGLUtils.getVersionGLSL() >= TESSELATION_SUPPORT_VERSION) {
+			int[] maxPatchVertices = new int[1];
+			glGetIntegerv(GL_MAX_PATCH_VERTICES, maxPatchVertices);
+			System.out.println("Max supported patch vertices "	+ maxPatchVertices[0]);
+		}
+		initBuffers();
+		createBuffers();
 
 		camera = new Camera().
-				withPosition(new Vec3D(-3,3,3)).
+				withPosition(new Vec3D(-2,2,2.5)).
 				withAzimuth(-1/4.0 * Math.PI).
 				withZenith(-1.3/5.0 * Math.PI);
 
 		projection = new Mat4PerspRH(Math.PI / 3, height / (float) width, 1.0, 20.0);
 
-		buffers = GridFactory.createGrid(30, 30);
 		renderTarget = new OGLRenderTarget(1024, 1024);
-		viewer  = new OGLTexture2D.Viewer();
-
-		cameraLight = new Camera().withPosition(new Vec3D(7,7,7)).
-				withAzimuth(5/4f * Math.PI).
-				withZenith(-1/5f * Math.PI);
 
 		textRenderer = new OGLTextRenderer(width, height);
 
-		try {
-			mosaictexture = new OGLTexture2D("textures/mosaic.jpg");
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 	}
-	
+
 	@Override
 	public void display() {
 		glEnable(GL_DEPTH_TEST); //zapnout z-buffer (kvůli text rendereru)
-		//cameraLight.left(time);
-		if(animation){
-			time += 0.01;
-		}else{
-			time += 0;
+
+		//podminka pro vyber shaderu u gridu
+		if (demoTypeChanged) {
+			int oldShaderProgram = shaderProgramViewer;
+			shaderProgramViewer = init(demoType);
+			if (shaderProgramViewer>0) {
+				glDeleteProgram(oldShaderProgram);
+			} else {
+				shaderProgramViewer = oldShaderProgram;
+			}
+			locIter = glGetUniformLocation(shaderProgramViewer, "iter");
+			locDemoType = glGetUniformLocation(shaderProgramViewer, "demoType");
+			demoTypeChanged = false;
 		}
 
-		renderFromLight();
+		//podminka pro update bufferu u krivky
+		if (update) {
+			updateBuffers();
+			update = false;
+		}
+
 		renderFromViewer();
-
-		viewer.view(renderTarget.getDepthTexture(), -1, -1, 0.7);
-		viewer.view(renderTarget.getColorTexture(), -1, -0.3, 0.7);
-
 		textRenderer.addStr2D(width-90, height - 5, "test");
 	}
 
-	private void renderFromLight() {
-		glUseProgram(shaderProgramLight);
-		renderTarget.bind();
-		glClearColor(0.5f, 0,0,1);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		glUniformMatrix4fv(locViewLight, false, cameraLight.getViewMatrix().floatArray());
-		glUniformMatrix4fv(locProjectionLight,false,projection.floatArray());
-		glUniform1f(locTimeLight, time);
-
-
-		glUniform1i(locSolidLight,1);
-		buffers.draw(GL_TRIANGLES,shaderProgramLight);
-
-		glUniform1i(locSolidLight,2);
-		buffers.draw(GL_TRIANGLES,shaderProgramLight);
-
-		glUniform1i(locSolidLight,3);
-		buffers.draw(GL_TRIANGLES, shaderProgramLight);
-
-		glUniform1i(locSolidLight,4);
-		buffers.draw(GL_TRIANGLES, shaderProgramLight);
-
-		glUniform1i(locSolidLight,5);
-		buffers.draw(GL_TRIANGLES, shaderProgramLight);
-
-		glUniform1i(locSolidLight,6);
-		buffers.draw(GL_TRIANGLES, shaderProgramLight);
-	}
 
 	private void renderFromViewer() {
 		glUseProgram(shaderProgramViewer);
@@ -155,46 +238,36 @@ public class Renderer extends AbstractRenderer {
 		glBindFramebuffer(GL_FRAMEBUFFER,0);
 
 		glPolygonMode(GL_FRONT_AND_BACK,myPolygonMode);
-		//nutno opravit viewport, prootže render target si nastavuje vlastní
 		glViewport(0,0,width,height);
 
-		glClearColor(0f, 0.5f,0,1);
+		glClearColor(0f, 0.f,0,0.7f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		renderTarget.getDepthTexture().bind(shaderProgramViewer, "depthTexture",1);
-		mosaictexture.bind(shaderProgramViewer,"mosaic", 0);
+		glUniform1i(locIter, iter);
+		glUniform1i(locDemoType, demoType);
 
-		glUniform3fv(locLightPosition, ToFloatArray.convert(cameraLight.getPosition()));
 		glUniform3fv(locEyePosition, ToFloatArray.convert(camera.getEye()));
-		glUniform1f(locTime, time);
-		glUniform1i(locVisMode, visMode);
-		glUniform1i(locLightFragment, lightFragment);
-
-
 		glUniformMatrix4fv(locView, false, camera.getViewMatrix().floatArray());
 		glUniformMatrix4fv(locProjection, false, projection.floatArray());
-		glUniformMatrix4fv(locLightVP,false, cameraLight.getViewMatrix().mul(projection).floatArray());
 
-		glUniform1i(locSolid,1);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
+		buffersLine.draw(GL_LINE_STRIP_ADJACENCY, shaderProgramViewer, indexBufferDataLine.size());
 
-		glUniform1i(locSolid,2);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
+		//zde se urcuje k jakemu modu zobrazeni se prida jaka metoda draw a jeji atributy
+		switch (demoType){
+			case 0: //case 0 a 1 je tvoren pomoci GL_Patches
+			case 1:
+				if (OGLUtils.getVersionGLSL() >= 400){
+					glPatchParameteri(GL_PATCH_VERTICES, 3);
+					buffers.draw(GL_PATCHES, shaderProgramViewer);
+				}
+				break;
+			case 2:
+				break;
+			default: //defaultne je tvoren pomoci GL_Patches
+				buffers.draw(GL_TRIANGLES, shaderProgramViewer);
+				break;
+		}
 
-		glUniform1i(locSolid,3);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
-
-		glUniform1i(locSolid,4);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
-
-		glUniform1i(locSolid,5);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
-
-		glUniform1i(locSolid,6);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
-
-		glUniform1i(locSolid,7);
-		buffers.draw(GL_TRIANGLES, shaderProgramViewer);
 	}
 
 	@Override
@@ -246,6 +319,17 @@ public class Renderer extends AbstractRenderer {
 	private final GLFWMouseButtonCallback mouseButtonCallback = new GLFWMouseButtonCallback() {
 		@Override
 		public void invoke(long window, int button, int action, int mods) {
+			if (button==GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS){
+				DoubleBuffer xBuffer = BufferUtils.createDoubleBuffer(1);
+				DoubleBuffer yBuffer = BufferUtils.createDoubleBuffer(1);
+				glfwGetCursorPos(window, xBuffer, yBuffer);
+				double mouseX = (xBuffer.get(0) / (double) width) * 2 - 1;
+				double mouseY = ((height - yBuffer.get(0)) / (double) height) * 2 - 1;
+				indexBufferDataLine.add(indexBufferDataLine.size());
+				vertexBufferDataPosLine.add(new Vec2D(mouseX, mouseY));
+				vertexBufferDataColLine.add(new Vec3D(mouseX / 2 + 0.5, mouseY / 2 + 0.5, 1));
+				update = true;
+			}
 			if (button == GLFW_MOUSE_BUTTON_LEFT) {
 				double[] xPos = new double[1];
 				double[] yPos = new double[1];
@@ -268,25 +352,17 @@ public class Renderer extends AbstractRenderer {
 					case GLFW_KEY_S -> camera = camera.backward(0.1);
 					case GLFW_KEY_LEFT_CONTROL -> camera = camera.up(0.1);
 					case GLFW_KEY_LEFT_SHIFT -> camera = camera.down(0.1);
-					case GLFW_KEY_O -> projection = new Mat4OrthoRH(15,15, 1.0, 200.0);
-					case GLFW_KEY_P -> projection = new Mat4PerspRH(Math.PI / 3, height / (float) width, 1.0, 20.0);
 					case GLFW_KEY_L -> myPolygonMode = GL_LINE;
 					case GLFW_KEY_F -> myPolygonMode = GL_FILL;
 					case GLFW_KEY_B -> myPolygonMode = GL_POINT;
-					case GLFW_KEY_X -> animation = true;
-					case GLFW_KEY_C -> animation = false;
-					case GLFW_KEY_1 -> visMode = 0;
-					case GLFW_KEY_2 -> visMode = 1;
-					case GLFW_KEY_3 -> visMode = 2;
-					case GLFW_KEY_4 -> visMode = 3;
-					case GLFW_KEY_5 -> visMode = 4;
-					case GLFW_KEY_6 -> visMode = 5;
-					case GLFW_KEY_H -> lightFragment= 1;
-					case GLFW_KEY_J -> lightFragment= 2;
-					case GLFW_KEY_K -> lightFragment= 3;
-					case GLFW_KEY_G -> lightFragment= 4;
-					case GLFW_KEY_UP -> cameraLight = cameraLight.left(0.1);
-					case GLFW_KEY_DOWN -> cameraLight = cameraLight.right(0.1);
+					case GLFW_KEY_UP -> iter=iter + 1;
+					case GLFW_KEY_DOWN -> iter= iter-1;
+					case GLFW_KEY_M -> {
+						demoType = (demoType+1) % 3;
+						demoTypeChanged = true;
+					}
+
+
 				}
 			}
 		}
